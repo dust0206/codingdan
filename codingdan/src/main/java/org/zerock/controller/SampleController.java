@@ -66,4 +66,19 @@ public class SampleController {
 		model.addAttribute("result", "success");
 		return "sample/ex02Bean";
 	}
+	// 	- Model 객체는 jsp에 콘트롤러에서 생성된 데이터를 담아서 전달하는 역할을 한다
+	// 	- 모델 2 방식에서 사용하는 request.setAttribute()와 유사한 역할
+	// 	- 과거에는 ModelAndView
+	// 	- Model에 담는 데이터 -> 파라미터가 아니라 다른 곳에서 발생한 데이터를 담기 위한 용기
+	 
+	// RedirectAttribute
+	// 	- 화면에 한번만 전달되는 파라미터를 처리하는 용도
+	// 	- 내부적으로 HttpSession 객체에 담아서 한번만 사용되고, 폐기
+	// 
+	// rttr.addFlashAttribute("name","AAA");
+	// 		rttr.addFlashAttribute("age",10);
+	//
+	//	return "redirect:/";
+	
+	// response.sendRedirect("/home?name=aaa&age=10);
 }
