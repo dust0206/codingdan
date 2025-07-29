@@ -1,0 +1,105 @@
+http://www.chlux.co.kr/bbs/board.php?bo_table=board02&wr_id=87
+
+- Setup (2 Node 구성)
+
+ 0. 공통 사항
+
+ 0.1. 방화벽&SElinux disable로 변경
+	vi /etc/sysconfig/selinux
+		
+	# setenforce 0
+	# getenforce
+	
+	# systemctl status firewalld
+	# systemctl stop firewalld
+	
+0.2. /etc/hosts파일 설정
+
+ 1.3. repolist 확인
+ 
+ dnf --enablerepo=highavailability -y install pacemaker pcs
+ or
+ dnf install fence-agents-all
+	( pcs와 fence-agents-all 설치 시 dependency 패키지로 pacemaker, corosync 패키지가 같이 설치 된다.)
+	
+ 2.1. cluster 계정 패스워드 등록 (양 node 같이 등록)
+	# passwd hacluster
+
+ 2.2. pcs daemon 시작 (양 node 시작)	
+	# systemctl start pcsd
+		( pcsd : pacemaker/corosync 설정, 관리 daemon)
+		
+ 2.3. 각 노드 인증
+	# pcs host auth node1 node2 -u hacluster -p hacluster
+	
+  2.4. 클러스터 구성
+  # pcs cluster setup  hacluster node1 node2
+ 
+  2.5. 클러스터 시작 
+  # pcs cluster start --all
+
+ 2.6 클러스터 상태 확인
+	# pcs status
+	(- Online: [ node1 node2] : online상태로 확인이 되었다면 클러스터에 2 node가 등록)
+	
+2.7. cluster 기본 셋팅
+   - 장애 처리 후 리소스 이동 방지 설정
+     # pcs property set default-resource-stickiness=100
+   - 리소스 등록 시 fence device 작동 방지   
+     # pcs property set stonith-enabled=false
+   - 리소스 등록이 끝나게 되면 fence device 작동 할 수 있도록 변경  
+     # pcs property set stonith-enabled=true
+   - 2 node 구성 할 시 일반적으로 quorum 설정을 disable
+     # pcs property set no-quorum-policy=ignore
+   - 셋팅 확인
+     # pcs property show 
+	 
+ 3. Service(Application) 확인
+  - HA Cluster에 등록 될 수 있는 Service(Application) 확인
+  ex) Oracle DB, Mysql, 기타 등등..
+ 
+ 4. Constraint 설정
+  - 리소스의 위치나 순서, 동거 조건을 제약하는 설정
+  # pcs status
+
+  
+   - 리소스 등록 후 기본 위치는 위의 사진과 같이 중구난방으로 위치하게 된다.
+  - 리소스 조건을 정의하지 않으면 failover시 어떠한 에러가 발생할 지 모른다.
+  - 그러므로 리소스들을 한데 뭉쳐 그룹화 하거나 constraint 설정을 하여야 한다.
+  
+  4.1. 리소스 위치 제약 조건 
+    - 기본 포맷 
+      # pcs constraint location <resource-name> prefers <node[=score]>
+       - 어떤 리소스가 어떤 노드에서 실행 될 것인지 결정
+       - score의 기본 값은 INFINITY
+      # pcs constraint location <resource-name> avoids <node[=score]>
+       - 어떤 리소스가 어떤 노드에서 실행 되지 말아야 하는지 결정
+       - score는 마찬가지로 기본 값은 INFINITY
+ 
+   4.2. 리소스 순서 제약 조건
+     - 기본 포맷
+       # pcs constraint order start <first-resource-name> then <second-resource-name>
+         - 어떤 리소스가 먼저 시작되고 늦게 시작 될 것인지 결정
+      
+      ex) 위 사진과 같이 리소스들이 그룹으로 되지 않았다면 order 조건으로 순서를 결정해 주어야 한다.
+          failover 시 node2에서 vip up, filesystem up, mysql_service up 순으로 결정한다면
+          # pcs constraint order start vip then mysqlfs
+          # pcs constraint order start mysqlfs then mysql_service
+          - 이와 같이 순서를 정의 
+          - 이미 그룹으로 리소스들을 한데 묶었다면 진행을 하지 않아도 무방 
+ 
+    4.3. 리소스 동거 제약 조건
+     - 기본 포맷 
+        # pcs constraint colocation add <resource-name> with <resource-name> [score]
+         - 어떤 리소스와 함께 있어야 하는지 결정
+   
+ 
+ 5. Failover 기본 순서
+  node1) Service down -> Filesystem umount(Shared Volume) -> VIP down 
+  ndoe2) VIP up -> Filesystem(Shared Volume) mount -> Service up
+ 
+ 
+HA 구성 후 운영 메뉴얼
+- http://www.chlux.co.kr/bbs/board.php?bo_table=board02&wr_id=90&sca=OS
+
+ 
