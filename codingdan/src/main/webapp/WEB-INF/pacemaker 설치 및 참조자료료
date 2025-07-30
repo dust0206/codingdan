@@ -26,17 +26,24 @@ http://www.chlux.co.kr/bbs/board.php?bo_table=board02&wr_id=87
 	# passwd hacluster
 
  2.2. pcs daemon 시작 (양 node 시작)	
-	# systemctl start pcsd
+	# systemctl start pcsd.service
 		( pcsd : pacemaker/corosync 설정, 관리 daemon)
+		
+ 2.2.1 pcsd 시작시 daemon 시작
+	# systemctl enable pcsd.service
 		
  2.3. 각 노드 인증
 	# pcs host auth node1 node2 -u hacluster -p hacluster
 	
   2.4. 클러스터 구성
-  # pcs cluster setup  hacluster node1 node2
+  # pcs cluster setup  hacluster01 node1 node2
  
   2.5. 클러스터 시작 
   # pcs cluster start --all
+  
+  2.5.1 부팅시 pacemaker와 corosync시작을 위해 두 호스트의 서비스를 활성화
+  # systemctl enable corosync.service
+  # systemctl enable pacemaker.service
 
  2.6 클러스터 상태 확인
 	# pcs status
