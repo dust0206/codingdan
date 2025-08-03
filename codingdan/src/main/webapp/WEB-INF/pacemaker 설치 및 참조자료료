@@ -40,6 +40,7 @@ http://www.chlux.co.kr/bbs/board.php?bo_table=board02&wr_id=87
  
   2.5. 클러스터 시작 
   # pcs cluster start --all
+  (* pacemaker.service, corosync.service daemon도 같이 up)
   
   2.5.1 부팅시 pacemaker와 corosync시작을 위해 두 호스트의 서비스를 활성화
   # systemctl enable corosync.service
@@ -69,6 +70,131 @@ http://www.chlux.co.kr/bbs/board.php?bo_table=board02&wr_id=87
   - 리소스의 위치나 순서, 동거 조건을 제약하는 설정
   # pcs status
 
+
+https://jeongyd.tistory.com/104
+
+	5. 클러스터 통신을 확인이
+	# corosync-cfgtool -s
+	
+	멤버쉽과 쿼럼을 확인이
+	# corosync-cmapctl | egrep -i members
+	
+	corosync 상태 확인이
+	# pcs status corosync
+	
+	클러스터 상태 확인
+	# pcs status
+	
+	6. Active / Passive 클러스터 생성
+	클러스터 설정을 변경하기 전에 아래처럼 crm_verify 명령어로 유효성을 확인해두는 것이 좋다
+	STONITH 부분에서 오류가 발생한다
+	
+	# crm_verify -L -V
+	error: Resource start-up disabled since no STONITH resources have been defined
+	error: Either configure some or disable STONITH with the stonith-enabled option
+	error: NOTE: Clusters with shared data need STONITH to ensure data integrity
+	error: CIB did not pass schema validation
+	Errors found during check: config not valid
+	
+	데이타의 무결성을 확보하기 위해 기본적으로 STONITH가 활성화 되어 있는데 이것을 비활성화 하고
+	다시 확인해 보면 아무런 오류가 발생하지 않는다
+	
+	# pcs property set stonith-enabled=false
+	# crm_verify -L -V
+
+	7. 가상 IP 리소스 생성된
+	가상 아이피를 리소스로 추가 가상IP는 노드가 다운되면 다른 노드로 이동하여 실제로 서비스에 이용되는 IP 주소로 이용되는
+	
+	 pcs resource create VirtualIP IPaddr2 ip=192.168.0.99 \
+               cidr_netmask=32 nic=eth2 op monitor interval=30s
+	ex) pcs resource create <Resource Name> ocf:heartbeat:IPaddr2 ip=192.168.1.4 cidr_netmask=27 op monitor interval=30s
+	# pcs resouce create VirtualIP IPaddr2 ip=192.168.214.120 cidr_netmask=24 nic=eth2 op monitor interval=30s
+	위에서추가한 리소스 VirtualIP는 세 부분 ocf:heartbeat:IPaddr2 의 형태로 부분했다.
+	여기서, 첫번째 필드는 resource standard, 두번째 필드는 표준에 따라 다르며 세번째 필드는 리소스 스크립트의 이름이다
+	
+	가상 IP 삭제
+	#  pcs  resource delete VirtualIP
+
+	# Failover test
+	
+	node1 cluster stop
+	# pcs cluster stop node1
+	
+	node1 cluster start
+	# pcs cluster start node1
+	
+	# pcs status [node1] - error 발생
+		Error: error running crm_mon, is pacemaker running?
+	crm_mon: Connection to cluster failed: Connection refused
+
+	# pcs status [node2에서 상태 확인]
+		Node List:
+		  * Online: [ node2 ] 
+		  * OFFLINE: [ node1 ] - offline으로 표시
+
+	node1에 다시 cluster start
+	# pcs cluster start node1
+	# pcs status
+
+
+https://codingschool.tistory.com/15
+
+	5. Virtual IP
+	이제 생성된 Cluster에 가상 IP를 추가합니다. Virtual IP는 실제로 클라이언트가 접속하는 서비스 IP로 A,B서버중 1대에만 할당이 됩니다.
+	# pcs resource create <Resource Name> ocf:heartbeat:IPaddr2 ip=192.168.1.4 cidr_netmask=27 op monitor interval=30s
+	
+	가상 IP가 여러개인 경우 Resource Name을 달리하여 추가 가능합니다.
+	
+	6. Service 추가
+	paceMaker는 Active상태일 때 기동해야할 서비스 프로세스들을 지정할 수 있습니다. 아래와 같이 리소스명과 서비스명을 지정합니다. 원하는 프로세스를 미리 system demon으로 등록해두어야 합니다.
+	
+	#pcs resource create <ResourceName> systemd:<service name>
+
+	ex) pcs resource create MyServer systemd:mydemon
+
+	
+	7. Auto Failback
+	Failover후에 장애가 발생한 서비스를 복구시 자동으로 복구된 서버로 리소스가 이동하게 됩니다. 
+	서비스 운영중에 이와 같은 상황이 발생하면 장애 상황이 발생하기 때문에 필요한 경우 막는게 좋습니다.
+	생성된 리소스별로 전부 입력해야 합니다.
+	
+	# pcs resource update <Resource Name> meta resource-stickiness=INFINITY
+	
+	8. 상태확인
+	cluster가 올바르게 동작중인지 확인할 수 있습니다.
+	
+	현재 Cluster상태를 확인한다.
+
+	[root@BizParseA ~]# pcs status
+	Cluster name: ha_cluster
+	Stack: corosync
+	Current DC: ServerA.localdomain (version 1.1.23-1.el7-9acf116022) - partition with quorum
+	Last updated: Wed Dec  9 15:38:42 2020
+	Last change: Wed Dec  9 14:55:20 2020 by root via cibadmin on ServerB.localdomain
+
+	2 nodes configured
+	3 resource instances configured
+	
+	
+	9. Cluster Test
+	이제 FailOver가 정상적으로 동작하는지 시험해 봅니다. 
+	우선 명령어를 사용하새 현재 Active인 서버를 Standby모드로 변경할 수있습니다.
+	
+	# pcs cluster standby ServerA.localdomain
+	
+	A서버가 Active가 되면 Standby상태였던 B서버가 Active가 됩니다. pcs status명령으로 확인후 서비스가 정상적으로 동작하는지 직접 확인하시면 됩니다. 
+	상태 확인후 다시 A서버로 돌리려면 아래 명령을 사용할 수 있습니다.
+	
+	# pcs cluster unstandby ServerA.localdomain
+	
+	
+	
+	
+	
+	
+	
+	
+	
   
    - 리소스 등록 후 기본 위치는 위의 사진과 같이 중구난방으로 위치하게 된다.
   - 리소스 조건을 정의하지 않으면 failover시 어떠한 에러가 발생할 지 모른다.
@@ -104,9 +230,16 @@ http://www.chlux.co.kr/bbs/board.php?bo_table=board02&wr_id=87
  5. Failover 기본 순서
   node1) Service down -> Filesystem umount(Shared Volume) -> VIP down 
   ndoe2) VIP up -> Filesystem(Shared Volume) mount -> Service up
+
+# 기타 명령어 모음
+	- 
+	pcs cluster destroy
+
  
  
 HA 구성 후 운영 메뉴얼
 - http://www.chlux.co.kr/bbs/board.php?bo_table=board02&wr_id=90&sca=OS
 
- 
+
+참고자료
+ https://m.blog.naver.com/hanajava/222286454574
